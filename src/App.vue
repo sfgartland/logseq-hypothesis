@@ -164,7 +164,10 @@ export default {
       this.updating = true;
 
       try {
-        const name = 'hypothesis__/' + uri.split('//')[1]
+        // the use of uri as page heading caused errors in Logseq, presumably 
+        // because of hierarchys is the headings. It is now replacing forwardslashes with
+        // backwardsslashes as a temporary fix
+        const name = 'hypothesis__/' + uri.split('//')[1].replace(/\//g, '\\')
         logseq.App.pushState('page', { name })
         await delay(300)
 
