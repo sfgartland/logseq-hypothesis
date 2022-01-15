@@ -164,31 +164,60 @@ export default {
       this.updating = true;
 
       try {
-        // the use of uri as page heading caused errors in Logseq, presumably 
-        // because of hierarchys is the headings. It is now replacing forwardslashes with
-        // backwardsslashes as a temporary fix
-        const name = 'hypothesis__/' + uri.split('//')[1].replace(/\//g, '\\')
-        logseq.App.pushState('page', { name })
+        let {title: hypothesisTitle, noteMap} = this.getPageNotes(uri)
+        const logseqTitle = await this.findPageName(uri)
+        
+        //If page isn't found, create new one with hypothesisTitle. This approach allowes for the title to be changedby the user
+        const pageTitle = logseqTitle ? logseqTitle : 'hypothesis__/' + hypothesisTitle;
+        logseq.App.pushState('page', { name: pageTitle })
         await delay(300)
 
         const page = await logseq.Editor.getCurrentPage();
-        if (name !== page.originalName)
+        if (pageTitle !== page.originalName)
           throw new Error('page error');
 
-        await this.loadPageNotes(page, uri);
+        await this.loadPageNotes(page, uri, pageTitle, noteMap);
       } finally {
         this.updating = false;
       }
     },
-    async loadPageNotes(page, uri) {
+    async findPageName(uri) {
+      const finds = (await logseq.DB.datascriptQuery(`
+      [:find (pull ?b [*])
+       :where
+       [?b :block/properties ?p]
+       [(get ?p :hypothesis-id) ?t]
+       [(= "${uri}" ?t)]]
+       `)).flat()
+
+       // Filters for only the ones that have a name attribute since it seems only pages have that, 
+       // TODO: Check up on a better filtering
+       const filteredFinds = finds.filter(find => find.name)
+
+       if(filteredFinds.length > 1) {
+         //TODO: throw error
+         throw new Error("Multiple pages has the same title")
+       } else if (filteredFinds == 0) {
+         //throw new Error("Page doesn't exist")
+         return
+       } else return filteredFinds[0]["original-name"]
+    },
+
+    async loadPageNotes(page, uri, title, noteMap) {
       if (!page || !uri) return
-      let {title, noteMap} = this.getPageNotes(uri);
+      
+      // hypothesis-id is the prop by which the plugin identifies each page
+      // hypothesis-naming-scheme is added for improved backwards compatability for later updates
+      const pagePropBlockString = `hypothesis-id:: ${uri}\nhypothesis-naming-scheme:: 0.2.0`
+      // TODO: Concider including a link like this later
+      // const hypothesisLinkString = `[:a {:href "${uri}" :target "_blank" :class "external-link"} [:span {:class "icon-hypothesis forbid-edit"}] " ${title}"]`
 
       let pageBlocksTree = await logseq.Editor.getCurrentPageBlocksTree();
-      let targetBlock = pageBlocksTree[0];
-      if (!targetBlock) {
-        targetBlock = await logseq.Editor.insertBlock(page.name, `[:a {:href "${uri}" :target "_blank" :class "external-link"} [:span {:class "icon-hypothesis forbid-edit"}] " ${title}"]`, { isPageBlock: true });
-        pageBlocksTree = [targetBlock];
+      let pagePropBlock = pageBlocksTree[0];
+      if (!pagePropBlock) {
+        // pre-block: true property makes it a page-property block
+        pagePropBlock = await logseq.Editor.insertBlock(page.name, pagePropBlockString, { isPageBlock: true, properties: {"pre-block": true} });
+        pageBlocksTree = [pagePropBlock];
       }
 
       const blocks = pageBlocksTree.slice(1);
@@ -204,7 +233,7 @@ export default {
         blockMap.set(hid, block);
       }
 
-      await logseq.Editor.updateBlock(targetBlock.uuid, `[:a {:href "${uri}" :target "_blank" :class "external-link"} [:span {:class "icon-hypothesis forbid-edit"}] " ${title}"]`);
+      await logseq.Editor.updateBlock(pagePropBlock.uuid, pagePropBlockString);
     },
     async updatePage() {
         const page = await logseq.Editor.getCurrentPage();
