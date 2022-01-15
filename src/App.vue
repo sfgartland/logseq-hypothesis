@@ -115,7 +115,7 @@ export default {
     },
     getPageNotes(uri) {
       let notes = logseq.settings?.annotations?.filter(x => x.uri === uri);
-      const title = notes[0]?.document.title;
+      const title = notes[0]?.document.title[0];
       const hids = new Set(notes.map(({id})=>id));
       let noteMap = new Map(notes.reduce((acc, { id, text, tags, target, updated, references }) => {
         const exact = target[0]?.selector?.filter(s => 'exact' in s)[0]?.exact;
